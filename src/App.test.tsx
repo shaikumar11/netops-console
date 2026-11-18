@@ -1,10 +1,11 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
 
 beforeEach(() => sessionStorage.clear())
 const signIn = () => userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+const go = (name: string) => userEvent.click(screen.getByRole('button', { name: new RegExp(`^${name}`) }))
 
 describe('App', () => {
   it('rejects a wrong password', async () => {
@@ -14,41 +15,73 @@ describe('App', () => {
     await signIn()
     expect(screen.getByRole('alert')).toHaveTextContent(/wrong username or password/i)
   })
-  it('shows the dashboard after signing in', async () => {
+  it('shows the overview with summary, chart and topology after sign in', async () => {
     render(<App />)
     await signIn()
-    expect(screen.getByText(/showing 24 of 24 devices/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /network overview/i })).toBeInTheDocument()
+    expect(screen.getByText('71%')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /average network latency/i })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /network topology/i })).toBeInTheDocument()
   })
-  it('filters devices by status and search, with an empty state', async () => {
+  it('filters devices and shows an empty state', async () => {
     render(<App />)
     await signIn()
+    await go('Devices')
+    expect(screen.getByText(/showing 24 of 24 devices/i)).toBeInTheDocument()
     await userEvent.selectOptions(screen.getByLabelText(/status/i), 'down')
-    expect(screen.getByText(/showing \d+ of 24 devices/i).textContent).not.toMatch(/showing 24/)
-    await userEvent.type(screen.getByLabelText(/search/i), 'zzz')
+    expect(screen.getByText(/showing 2 of 24 devices/i)).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText(/^search$/i), 'zzz')
     expect(screen.getByText(/no devices match/i)).toBeInTheDocument()
   })
-  it('opens device details and acknowledges an alert', async () => {
+  it('opens the device drawer, acknowledges the alert and closes it', async () => {
     render(<App />)
     await signIn()
+    await go('Devices')
     await userEvent.click(screen.getAllByRole('button', { name: /^(rt|sw|fw|ap)-/ })[0])
-    expect(screen.getByLabelText(/device details/i)).toHaveTextContent(/latency trend/i)
-    await userEvent.click(screen.getByRole('button', { name: /acknowledge alert/i }))
-    expect(screen.getByText(/alert acknowledged/i)).toBeInTheDocument()
+    const drawer = screen.getByLabelText(/device details/i)
+    expect(drawer).toHaveTextContent(/latency trend/i)
+    await userEvent.click(within(drawer).getByRole('button', { name: /acknowledge alert/i }))
+    expect(drawer).toHaveTextContent(/alert acknowledged/i)
+    await userEvent.click(within(drawer).getByRole('button', { name: /close/i }))
+    expect(drawer).not.toHaveClass('open')
   })
-  it('re-sorts when a column header is clicked', async () => {
+  it('lists alerts and acknowledges one', async () => {
     render(<App />)
     await signIn()
+    await go('Alerts')
+    expect(screen.getByText(/7 active alerts/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/device unreachable/i)).toHaveLength(2)
+    await userEvent.click(screen.getAllByRole('button', { name: /^acknowledge$/i })[0])
+    expect(screen.getByText(/^acknowledged$/i)).toBeInTheDocument()
+  })
+  it('opens a device from the topology map', async () => {
+    render(<App />)
+    await signIn()
+    await userEvent.click(screen.getByRole('button', { name: 'fw-che-15' }))
+    expect(screen.getByLabelText(/device details/i)).toHaveTextContent('fw-che-15')
+  })
+  it('finds a device with the Ctrl K search', async () => {
+    render(<App />)
+    await signIn()
+    await userEvent.keyboard('{Control>}k{/Control}')
+    const dialog = screen.getByRole('dialog', { name: /search devices/i })
+    await userEvent.type(within(dialog).getByLabelText(/search all devices/i), 'ap-pun-04')
+    await userEvent.click(within(dialog).getByRole('button', { name: /ap-pun-04/ }))
+    expect(screen.getByLabelText(/device details/i)).toHaveTextContent('ap-pun-04')
+    await userEvent.keyboard('{Control>}k{/Control}{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+  it('re-sorts a column and keeps the session across a reload, then signs out', async () => {
+    const { unmount } = render(<App />)
+    await signIn()
+    await go('Devices')
     const name = screen.getByRole('button', { name: 'Device' })
     await userEvent.click(name)
     await userEvent.click(name)
     expect(name.closest('th')).toHaveAttribute('aria-sort', 'ascending')
-  })
-  it('signs out and keeps the session across a reload', async () => {
-    const { unmount } = render(<App />)
-    await signIn()
     unmount()
     render(<App />)
-    expect(screen.getByText(/showing 24 of 24/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /network overview/i })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /sign out/i }))
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
   })

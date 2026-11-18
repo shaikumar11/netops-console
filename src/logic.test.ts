@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeDevices } from './data'
-import { avg, filterDevices, p95, sortDevices, summarize } from './logic'
+import { alertsFrom, avg, filterDevices, nextPoint, p95, sortDevices, summarize } from './logic'
 
 const d = makeDevices()
 const all = { q: '', status: 'all' as const, type: 'all' }
@@ -33,5 +33,13 @@ describe('logic', () => {
     expect(avg([])).toBe(0)
     expect(p95([1, 2, 3, 4, 5, 6, 7, 8, 9, 100])).toBe(100)
     expect(p95([])).toBe(0)
+  })
+  it('builds alerts with critical first and keeps a rolling live series', () => {
+    const a = alertsFrom(d)
+    expect(a).toHaveLength(7)
+    expect(a[0].severity).toBe('critical')
+    const s = nextPoint(Array.from({ length: 30 }, () => 20), 0.5)
+    expect(s).toHaveLength(30)
+    expect(nextPoint([], 0.5)).toEqual([20])
   })
 })

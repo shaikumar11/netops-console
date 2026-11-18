@@ -29,3 +29,15 @@ export function sortDevices(d: Device[], key: SortKey, dir: 'asc' | 'desc') {
   const out = [...d].sort((a, b) => (val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0))
   return dir === 'asc' ? out : out.reverse()
 }
+
+export function nextPoint(series: number[], r: number, keep = 30) {
+  const last = series[series.length - 1] ?? 20
+  return [...series, Math.max(5, Math.round(last + (r - 0.5) * 8))].slice(-keep)
+}
+
+export function alertsFrom(d: Device[]) {
+  return d.filter((x) => x.status !== 'up').map((x) => ({
+    id: x.id, name: x.name, site: x.site, severity: x.status === 'down' ? 'critical' : 'warning',
+    message: x.status === 'down' ? 'Device unreachable' : `Latency ${avg(x.latency)} ms above the 50 ms target`,
+  })).sort((a, b) => (a.severity < b.severity ? -1 : 1))
+}
